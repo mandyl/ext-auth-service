@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # NOTE: Service name is "ext-auth" so the FQDN becomes:
+  # ext-auth.backend.svc.cluster.local
+  # This matches the Higress WasmPlugin configuration.
+  name: ext-auth
+  namespace: backend
+  labels:
+    app: ext-auth-service
+spec:
+  selector:
+    app: ext-auth-service
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+      protocol: TCP
+  type: ClusterIP

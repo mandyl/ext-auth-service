@@ -1,0 +1,34 @@
+apiVersion: extensions.higress.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: ext-auth-plugin
+  namespace: higress-system
+spec:
+  priority: 360
+  # Apply to all routes matched by the gateway (can be scoped to specific ingress/route)
+  matchRules:
+    - config:
+        http_service:
+          endpoint_mode: forward_auth
+          endpoint:
+            service_name: ext-auth.backend.svc.cluster.local
+            service_port: 8090
+            path: /auth
+            request_method: POST
+            timeout: 3000
+          authorization_request:
+            allowed_headers:
+              - exact: authorization
+              - prefix: x-
+          authorization_response:
+            allowed_upstream_headers:
+              - exact: x-user-id
+              - exact: x-auth-version
+            allowed_client_headers:
+              - exact: x-auth-error
+              - exact: www-authenticate
+          failure_mode_allow: false
+          status_on_error: 503
+  # Higress official ext-auth wasm plugin image
+  # Check https://higress.io for the latest version matching your Higress release
+  url: oci://higress-registry.cn-hangzhou.cr.aliyuncs.com/plugins/ext-auth:1.0.0
