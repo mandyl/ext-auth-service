@@ -18,40 +18,29 @@ spec:
       containers:
         - name: ext-auth-service
           image: mandyl/ext-auth-service:latest
-          imagePullPolicy: Always
           ports:
             - containerPort: 8090
-              name: http
           env:
             - name: PORT
               value: "8090"
-            - name: NODE_ENV
-              value: "production"
-            - name: VALID_TOKENS
-              valueFrom:
-                configMapKeyRef:
-                  name: ext-auth-tokens
-                  key: tokens
+            - name: TOKEN_CONFIG_PATH
+              value: "/etc/ext-auth/tokens.yaml"
+          volumeMounts:
+            - name: token-config
+              mountPath: /etc/ext-auth
           livenessProbe:
             httpGet:
               path: /health
               port: 8090
             initialDelaySeconds: 5
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health
               port: 8090
             initialDelaySeconds: 3
             periodSeconds: 5
-            timeoutSeconds: 3
-          resources:
-            requests:
-              cpu: "50m"
-              memory: "64Mi"
-            limits:
-              cpu: "200m"
-              memory: "128Mi"
-      restartPolicy: Always
+      volumes:
+        - name: token-config
+          configMap:
+            name: ext-auth-tokens

@@ -1,116 +1,79 @@
 # ext-auth-service
 
-External Authentication Service for [Higress](https://higress.ai) API Gateway.
+外部认证服务，为 Higress ext-auth 插件提供 HTTP 认证接口。
 
-This service implements the HTTP endpoint consumed by Higress's `ext-auth` WasmPlugin
-(`forward_auth` mode). It validates `Authorization: Bearer <token>` headers and returns
-user identity information to the gateway on success.
+## 功能
 
-## Architecture
+- 接收 Higress ext-auth 插件转发的认证请求（`POST /auth`）
+- 从 Kubernetes ConfigMap 加载有效 token 列表
+- 校验 `Authorization: Bearer <token>` 请求头
+  - 认证通过：返回 `200 OK`，附带 `x-user-id` 响应头
+  - 格式错误 / 缺失：返回 `401 Unauthorized`
+  - Token 无效或过期：返回 `403 Forbidden`
+- 提供健康检查接口（`GET /health`）
 
-```
-Client ──▶ Higress Gateway ──▶ ext-auth-service (/auth)
-                │                       │
-                │  200 + x-user-id      │  validate token
-                │◀──────────────────────│
-                │
-                ▼ (authenticated)
-           mcp-service
-```
+## 快速开始
 
-## Environment Variables
-
-| Variable       | Default | Description                                                        |
-|----------------|---------|--------------------------------------------------------------------|
-| `PORT`         | `8090`  | HTTP port the service listens on                                   |
-| `HOST`         | `0.0.0.0` | Bind address                                                    |
-| `VALID_TOKENS` | *(none)*| Comma-separated `token:user_id` pairs, e.g. `tok1:user1,tok2:user2` |
-| `LOG_LEVEL`    | `info`  | Pino log level (`trace`, `debug`, `info`, `warn`, `error`)         |
-| `NODE_ENV`     | —       | Set to `production` to disable pretty-print logs                   |
-
-## Local Development
+### 本地运行
 
 ```bash
-# 1. Install dependencies
-npm install
+# 设置环境变量（可选，有默认值）
+export PORT=8090
+export TOKEN_CONFIG_PATH=./testdata/tokens.yaml
 
-# 2. Set environment variables
-export VALID_TOKENS="my-secret-token-001:user_001,my-secret-token-002:user_002"
-
-# 3. Run in dev mode (ts-node)
-npm run dev
+go run ./cmd/server
 ```
 
-Test the auth endpoint:
+### Docker 构建
 
 ```bash
-# Should return 200
-curl -i -X POST http://localhost:8090/auth \
-  -H "Authorization: Bearer my-secret-token-001"
-
-# Should return 403
-curl -i -X POST http://localhost:8090/auth \
-  -H "Authorization: Bearer invalid-token"
-
-# Should return 401
-curl -i -X POST http://localhost:8090/auth
-```
-
-## Docker Build
-
-```bash
-# Build image
 docker build -t mandyl/ext-auth-service:latest .
-
-# Run container
-docker run -p 8090:8090 \
-  -e VALID_TOKENS="my-secret-token-001:user_001" \
-  mandyl/ext-auth-service:latest
 ```
 
-## Kubernetes Deployment
+### Kubernetes 部署
 
 ```bash
-# Create namespace (if not exists)
-kubectl apply -f deploy/k8s/namespace.yaml
-
-# Deploy ConfigMap (edit tokens first!)
+kubectl create namespace backend
 kubectl apply -f deploy/k8s/configmap.yaml
-
-# Deploy service and workload
 kubectl apply -f deploy/k8s/deployment.yaml
 kubectl apply -f deploy/k8s/service.yaml
-
-# Verify
-kubectl get pods -n backend -l app=ext-auth-service
-kubectl logs -n backend -l app=ext-auth-service
 ```
 
-## API Reference
+## 配置
 
-### `POST /auth`
+Token 配置通过 ConfigMap 挂载到 `/etc/ext-auth/tokens.yaml`，格式：
 
-Validates the `Authorization` request header.
-
-**Request headers (forwarded by Higress):**
-
-| Header | Required | Description |
-|--------|----------|-------------|
-| `Authorization` | Yes | `Bearer <token>` |
-| `X-Forwarded-*` | No | Original request metadata (forward_auth mode) |
-
-**Responses:**
-
-| Status | Meaning | Response Headers |
-|--------|---------|-----------------|
-| `200 OK` | Authenticated | `x-user-id: <user_id>`, `x-auth-version: 1.0` |
-| `401 Unauthorized` | Missing/malformed token | `x-auth-error: missing_or_invalid_format`, `WWW-Authenticate` |
-| `403 Forbidden` | Unknown token | `x-auth-error: token_not_found` |
-
-### `GET /health`
-
-Liveness/readiness probe.
-
-```json
-{ "status": "ok", "timestamp": "2026-03-06T12:00:00.000Z" }
+```yaml
+tokens:
+  - value: "my-secret-token-001"
+    user_id: "user_001"
+    description: "描述"
+    expires_at: 0   # 0 = 永不过期，否则为 Unix 时间戳（秒）
 ```
+
+## API
+
+### POST /auth
+
+认证接口，由 Higress ext-auth 插件调用。
+
+| 请求头           | 说明                              |
+|-----------------|-----------------------------------|
+| Authorization   | `Bearer <token>`，必填             |
+
+| 响应码 | 含义          | 响应头                                         |
+|--------|---------------|------------------------------------------------|
+| 200    | 认证通过       | `x-user-id: <user_id>`, `x-auth-version: 1.0` |
+| 401    | 缺失或格式错误  | `x-auth-error: missing_or_invalid_token`       |
+| 403    | Token 无效/过期 | `x-auth-error: token_expired_or_not_found`    |
+
+### GET /health
+
+健康检查，返回 `{"status":"ok"}`。
+
+## 环境变量
+
+| 变量               | 默认值                      | 说明                   |
+|-------------------|-----------------------------|------------------------|
+| `PORT`            | `8090`                      | 服务监听端口            |
+| `TOKEN_CONFIG_PATH` | `/etc/ext-auth/tokens.yaml` | Token 配置文件路径      |

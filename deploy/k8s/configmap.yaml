@@ -4,6 +4,13 @@ metadata:
   name: ext-auth-tokens
   namespace: backend
 data:
-  # Format: "token1:user_id1,token2:user_id2"
-  # Add or remove tokens here; restart the pod to pick up changes.
-  tokens: "my-secret-token-001:user_001,my-secret-token-002:user_002"
+  tokens.yaml: |
+    tokens:
+      - value: "my-secret-token-001"
+        user_id: "user_001"
+        description: "测试用 Token"
+        expires_at: 0
+      - value: "my-secret-token-002"
+        user_id: "user_002"
+        description: "另一个测试 Token"
+        expires_at: 0
